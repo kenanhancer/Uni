@@ -1,4 +1,4 @@
-Uni
+UniDyno
 ===
 
 ORM for ADO.NET
