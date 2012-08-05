@@ -1,7 +1,8 @@
 UniDyno
 ===
 
-ORM for ADO.NET
+ORM for ADO.NET 
+You can read article from http://www.kenanhancer.com/uni-orm-for-ado-net/ 
 
     using System;
     using System.Collections.Generic;
