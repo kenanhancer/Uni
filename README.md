@@ -1,8 +1,8 @@
 UniDyno
 ===
 
-ORM for ADO.NET 
-You can read article from http://www.kenanhancer.com/uni-orm-for-ado-net/ 
+A simple data access tool for .Net
+You can read article from http://www.kenanhancer.com/uni-simple-data-access-tool-for-dot-net/
 
 How To Install It?
 ------------------
