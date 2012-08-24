@@ -1,5 +1,5 @@
-UniDyno
-===
+Uni - data access tool for .NET
+===============================
 
 A simple data access tool for .Net
 You can read article from http://www.kenanhancer.com/uni-simple-data-access-tool-for-dot-net/
