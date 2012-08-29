@@ -174,14 +174,16 @@ Insert, Update, Delete, BulkInsert and BulkUpdate Operations
 var newID = sakila.dyno.Insert(
     Table: "customer",
     PKField: "customer_id",
-    Args: new { first_name = "kenan", last_name = "hancer", email = "kenanhancer@hotmail.com", active = true, store_id = 1, address_id = 5, create_date=DateTime.Now }
+    Args: new { first_name = "kenan", last_name = "hancer", email = "kenanhancer@hotmail.com", active = true, store_id = 1, address_id = 5, create_date = DateTime.Now }
 );
 
-//Delete record which is inserted upper code
-var result = sakila.dyno.Delete( Table: "customer", PKField: "customer_id", Args: newID );
+//Delete record which is inserted
+var result = sakila.dyno.Delete(Table: "customer", PKField: "customer_id", Args: newID);
 
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////
 //Insert more than one record
-var newID_Array = sakila.dyno.Insert(
+var insertResult = sakila.dyno.Insert(
     Table: "customer",
     PKField: "customer_id",
     Args: new object[] { 
@@ -192,17 +194,18 @@ var newID_Array = sakila.dyno.Insert(
 );
 
 //Delete more than one record
-var result = sakila.dyno.Delete( Table: "customer", PKField: "customer_id", Args: newID_Array );
+var deleteResult = sakila.dyno.Delete(Table: "customer", PKField: "customer_id", Args: insertResult);
+/////////////////////////////////////////////////////////////////////////////////////////////////////
 
 //Update one record
-var result = sakila.dyno.Update(
+var updateResult = sakila.dyno.Update(
     Table: "customer",
     PKField: "customer_id",
     Args: new { customer_id = 1, active = false }
 );
 
 //Update more than one record
-var result = sakila.dyno.Update(
+var updateResult = sakila.dyno.Update(
     Table: "customer",
     PKField: "customer_id",
     Args: new object[] {
@@ -211,31 +214,33 @@ var result = sakila.dyno.Update(
             }
 );
 
+
 //BulkInsert
-//Below code retriews first 5 rows and updates rows and then insert again database.
-object result = sakila.dyno.Query(Table: "customer", Limit: 5, OrderBy: "customer_id");
-var customerList1 = result.ToEnumerable<dynamic>().ToList();
-customerList1.ForEach(f => f.active = false);
+//Below code retriews first 5 rows and updates and then insert again database.
+var result = ((IEnumerable<dynamic>)sakila.dyno.Query(Table: "customer", Limit: 5, OrderBy: "customer_id")).ToList();
+result.ForEach(f => f.active = false);
+
 var bulkInsertResult = sakila.dyno.BulkInsert(
     Table: "customer",
     PKField: "customer_id",
-    Args: customerList1.ToArray()
+    Args: result.ToArray()
 );
 
 //BulkUpdate
-//Below code retriews last 5 rows and updates rows and then save changes to database.
-object result = sakila.dyno.Query(Table: "customer", Limit: 5, OrderBy: "customer_id DESC");
-var customerList2 = result.ToEnumerable<dynamic>().ToList();
-customerList2.ForEach(f => f.active = true);
+var result = ((IEnumerable<dynamic>)sakila.dyno.Query(Table: "customer", Limit: 5, OrderBy: "customer_id DESC")).ToList();
+result.ForEach(f => f.active = true);
 
-object bulkUpdateResult = sakila.dyno.BulkUpdate(
+var bulkUpdateResult = sakila.dyno.BulkUpdate(
     Table: "customer",
     PKField: "customer_id",
-    Args: customerList2.ToArray()
+    Args: result.ToArray()
 );
 
-//Delete 
-var result = sakila.dyno.Delete( Table: "customer", PKField: "customer_id", Args: customerList2.ToArray() );
+var deleteResult = sakila.dyno.Delete(
+    Table: "customer",
+    PKField: "customer_id",
+    Args: result.ToArray()
+);
 ```
 
 Some extension method
