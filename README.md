@@ -8,11 +8,11 @@ How To Install It?
 ------------------
 Drop Uni C#.NET code file into your project and change it as you wish or you can install from NuGet Galery;
 
-You should write Package Manager Console below code and Uni will be installed automatically. By the way, you can also reach Uni NuGet package from http://nuget.org/packages/Uni address.
-
+You should write Package Manager Console below code and Uni will be installed automatically.
 ```csharp
 Install-Package Uni
 ```
+By the way, you can also reach Uni NuGet package from http://nuget.org/packages/Uni address.
 
 How Do You Use It?
 ------------------
