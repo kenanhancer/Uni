@@ -2,11 +2,17 @@ Uni - data access tool for .NET
 ===============================
 
 A simple data access tool for .Net
-You can read article from http://www.kenanhancer.com/uni-a-simple-data-access-tool-for-dot-net/
+You can also read main article from http://www.kenanhancer.com/uni-a-simple-data-access-tool-for-dot-net/
 
 How To Install It?
 ------------------
-Drop Uni C#.NET code file into your project and change it as you wish.
+Drop Uni C#.NET code file into your project and change it as you wish or you can install from NuGet Galery;
+
+You should write Package Manager Console below code and Uni will be installed automatically. By the way, you can also reach Uni NuGet package from http://nuget.org/packages/Uni address.
+
+```csharp
+Install-Package Uni
+```
 
 How Do You Use It?
 ------------------
@@ -243,6 +249,31 @@ var deleteResult = sakila.dyno.Delete(
 );
 ```
 
+Simple Join, GroupBy and Having
+-------------------------------
+Let’s say you want to use simple join queries. Actually, you can use capabilities of Uni. 
+First of all, we must ask ourselves that what is join. it is equality of specific table columns. 
+So, we can set “Table” argument as tables which we want to join and later we can set “Where” argument as columns which are equal such as following code. 
+If we use aggregate functions such as “SUM, MAX, MIN, AVG, COUNT” and normal column together such as “sum(amount), first_name” so, we should set “GroupBy” argument such as “GroupBy: first_name”. 
+That is all, this is just idea and you can develop different variations.
+
+```csharp
+//Three tables are joined. customer and payment tables are joined with customer_id column. Later, payment and staff tables are joined with staff_id column
+var result = ((IEnumerable<dynamic>)sakila.dyno.Query(
+        Table: "payment as p,customer as c,staff as s", 
+        Columns: "p.*, CONCAT(s.first_name, ' ', s.last_name) as Staff_FullName, CONCAT(c.first_name, ' ', c.last_name) as Customer_FullName", 
+        Where: "p.customer_id=c.customer_id and s.staff_id=p.staff_id and p.customer_id=?customer_id", 
+        customer_id: 1)).ToList();
+
+//Get Total payment amounts which are bigger than 100 and payment counts according to customers
+var result = ((IEnumerable<dynamic>)sakila.dyno.Query(
+        Table: "payment p,customer c", 
+        Columns: "CONCAT(c.first_name, ' ', c.last_name) as Customer_FullName,SUM(p.amount) TotalPayment,COUNT(p.customer_id) PaymentCount",
+        Where: "p.customer_id=c.customer_id",
+        GroupBy: "Customer_FullName",
+        Having: "SUM(p.amount)>100")).ToList();
+```
+
 Some extension method
 ---------------------
 Let's say you need to create CSV file. Uni can generate for you
@@ -273,10 +304,26 @@ var result = aw.dyno.Query(Schema: "Production", Table: "Product", Where: "Color
 
 var result = aw.dyno.Query(Schema: "Production", Table: "Product", Where: "Color=@Color and ListPrice=@ListPrice", ListPrice: 0, Color: "Black");
 
-var awResult10 = aw.dyno.Query(Schema: "Production", Table: "Product", ListPrice: 0, Color: "Black");
+var result = aw.dyno.Query(Schema: "Production", Table: "Product", ListPrice: 0, Color: "Black");
 
 //After this method runs, generated query will be below line. So, Uni have some standart arguments. But, others will be criteria.
 //Let's look at below SQL query "Color" and "ListPrice" arguments added as criteria.
 //SELECT ProductID,Name,ProductNumber FROM [Production].[Product] WHERE ListPrice=@ListPrice AND Color=@Color ORDER BY ProductID DESC
-var awResult11 = aw.dyno.Query(Schema: "Production", Table: "Product", Columns: "ProductID,Name,ProductNumber", OrderBy: "ProductID DESC", ListPrice: 0, Color: "Black");
+var result = aw.dyno.Query(Schema: "Production", Table: "Product", Columns: "ProductID,Name,ProductNumber", OrderBy: "ProductID DESC", ListPrice: 0, Color: "Black");
+
+//Named Argument Query Syntax
+var result = sakila.dyno.Query(Table: "customer", Active: true);
+var result = sakila.dyno.Query(Table: "customer", Where: "Active=?Active", Active: true);
+
+//Get total payment amount of customer who has value 1 of customer_id
+var result = sakila.dyno.Sum(Table: "payment", Columns: "amount", customer_id: 1);
+
+//Get FullName of customers
+var result = sakila.dyno.Query<string>(Table: "customer", Columns: "CONCAT(first_name, ' ', last_name) as FullName");
+
+//Get tables of database
+var tables = ((IEnumerable<dynamic>)sakila.GetTables()).ToList();
+
+//Get columns of table
+var tableColumns = ((IEnumerable<dynamic>)sakila.GetColumns("customer")).ToList();
 ```
