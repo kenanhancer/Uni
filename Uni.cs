@@ -147,45 +147,16 @@ public static class UniExtensions
             yield return ret;
         }
     }
-    public static Func<T1, T2> PropertyGetter<T1, T2>(T1 obj, string propertyName)
-    {
-        ParameterExpression param = Expression.Parameter(typeof(T1), "param");
-        Expression GetPropertyValueExp = Expression.Lambda(Expression.Property(param, propertyName), param);
-        Expression<Func<T1, T2>> GetPropertyValueLambda = (Expression<Func<T1, T2>>)GetPropertyValueExp;
-        return GetPropertyValueLambda.Compile();
-    }
-    public static Func<object, object> PropertyGetter(object obj, string propertyName)
-    {
-        ParameterExpression param = Expression.Parameter(typeof(object), "param");
-        Expression GetPropertyValueExp = Expression.Lambda(Expression.Property(param, propertyName), param);
-        Expression<Func<object, object>> GetPropertyValueLambda = (Expression<Func<object, object>>)GetPropertyValueExp;
-        return GetPropertyValueLambda.Compile();
-    }
-    public static Action<T1, T2> PropertySetter<T1, T2>(T1 obj, string propertyName)
-    {
-        PropertyInfo pi = typeof(T1).GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
-        MethodInfo SetterMethodInfo = pi.GetSetMethod();
-        ParameterExpression param = Expression.Parameter(typeof(T1), "param");
-        ParameterExpression paramNewValue = Expression.Parameter(typeof(T2), "newValue");
-        MethodCallExpression MethodCallSetterOfProperty = Expression.Call(param, SetterMethodInfo, paramNewValue);
-        Expression SetPropertyValueExp = Expression.Lambda(MethodCallSetterOfProperty, param, paramNewValue);
-        Expression<Action<T1, T2>> SetPropertyValueLambda = (Expression<Action<T1, T2>>)SetPropertyValueExp;
-        return SetPropertyValueLambda.Compile();
-    }
     public static Action<object, object> PropertySetter(object obj, string propertyName)
     {
         var type = obj.GetType();
         PropertyInfo pi = type.GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
         MethodInfo SetterMethodInfo = pi.GetSetMethod();
-
         ParameterExpression param = Expression.Parameter(typeof(object), "param");
         Expression convertedParam = Expression.Convert(param, type);
-
         ParameterExpression paramNewValue = Expression.Parameter(typeof(object), "newValue");
         Expression convertedParamNewValue = Expression.Convert(paramNewValue, pi.PropertyType);
-
         MethodCallExpression MethodCallSetterOfProperty = Expression.Call(convertedParam, SetterMethodInfo, convertedParamNewValue);
-
         Expression SetPropertyValueExp = Expression.Lambda(MethodCallSetterOfProperty, param, paramNewValue);
         Expression<Action<object, object>> SetPropertyValueLambda = (Expression<Action<object, object>>)SetPropertyValueExp;
         return SetPropertyValueLambda.Compile();
