@@ -11,6 +11,7 @@ using System.Collections.Specialized;
 using System.Runtime.Serialization;
 using System.Reflection;
 using System.IO;
+using System.Linq.Expressions;
 
 public enum DatabaseType { SQLServer, SqlServerCE, MySQL, Oracle, SQLite, PostgreSQL }
 public static class UniExtensions
@@ -146,52 +147,48 @@ public static class UniExtensions
             yield return ret;
         }
     }
-    public static T RecordToObject<T>(this IDataReader reader)
+    public static Func<T1, T2> PropertyGetter<T1, T2>(T1 obj, string propertyName)
     {
-        dynamic retValue = null;
-        if (Enum.GetNames(typeof(TypeCode)).Contains(typeof(T).Name))
-            retValue = reader.IsDBNull(0) ? default(T) : reader[0];
-        else
-        {
-            retValue = Activator.CreateInstance<T>();
-            var columns = reader.GetSchemaTable().AsEnumerable().Select(f => f["ColumnName"]);
-            typeof(T).GetProperties().ToList().ForEach(pi =>
-            {
-                if (columns.Contains(pi.Name))
-                {
-                    int columnOrdinal = reader.GetOrdinal(pi.Name);
-                    pi.SetValue(retValue, reader.IsDBNull(columnOrdinal) ? null : reader[columnOrdinal], null);
-                }
-                else
-                    pi.SetValue(retValue, null, null);
-            });
-        }
-        return retValue;
+        ParameterExpression param = Expression.Parameter(typeof(T1), "param");
+        Expression GetPropertyValueExp = Expression.Lambda(Expression.Property(param, propertyName), param);
+        Expression<Func<T1, T2>> GetPropertyValueLambda = (Expression<Func<T1, T2>>)GetPropertyValueExp;
+        return GetPropertyValueLambda.Compile();
     }
-    public static void SetObjectFromOtherObject(this object obj, object sourceObject)
+    public static Func<object, object> PropertyGetter(object obj, string propertyName)
     {
-        foreach (PropertyInfo pi in obj.GetType().GetProperties())
-            pi.SetValue(obj, sourceObject.GetType().GetProperty(pi.Name).GetValue(sourceObject, null), null);
+        ParameterExpression param = Expression.Parameter(typeof(object), "param");
+        Expression GetPropertyValueExp = Expression.Lambda(Expression.Property(param, propertyName), param);
+        Expression<Func<object, object>> GetPropertyValueLambda = (Expression<Func<object, object>>)GetPropertyValueExp;
+        return GetPropertyValueLambda.Compile();
     }
-    public static void SetObjectFromDataReader(this object obj, IDataReader reader)
+    public static Action<T1, T2> PropertySetter<T1, T2>(T1 obj, string propertyName)
     {
-        obj.GetType().GetProperties().ToList().ForEach(pi =>
-        {
-            int columnOrdinal = reader.GetOrdinal(pi.Name);
-            pi.SetValue(obj, reader.IsDBNull(columnOrdinal) ? null : reader[columnOrdinal], null);
-        });
+        PropertyInfo pi = typeof(T1).GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
+        MethodInfo SetterMethodInfo = pi.GetSetMethod();
+        ParameterExpression param = Expression.Parameter(typeof(T1), "param");
+        ParameterExpression paramNewValue = Expression.Parameter(typeof(T2), "newValue");
+        MethodCallExpression MethodCallSetterOfProperty = Expression.Call(param, SetterMethodInfo, paramNewValue);
+        Expression SetPropertyValueExp = Expression.Lambda(MethodCallSetterOfProperty, param, paramNewValue);
+        Expression<Action<T1, T2>> SetPropertyValueLambda = (Expression<Action<T1, T2>>)SetPropertyValueExp;
+        return SetPropertyValueLambda.Compile();
     }
-    public static void SetObjectFromDataRow(this object obj, DataRow dataRow)
+    public static Action<object, object> PropertySetter(object obj, string propertyName)
     {
-        obj.GetType().GetProperties().ToList().ForEach(pi => pi.SetValue(obj, dataRow[pi.Name], null));
-    }
-    public static void SetObjectFromSerializationInfo(this object obj, SerializationInfo info)
-    {
-        obj.GetType().GetProperties().ToList().ForEach(pi => pi.SetValue(obj, info.GetValue(pi.Name, typeof(object)), null));
-    }
-    public static void GetObjectData(this object obj, SerializationInfo info)
-    {
-        obj.GetType().GetProperties().ToList().ForEach(pi => info.AddValue(pi.Name, pi.GetValue(obj, null)));
+        var type = obj.GetType();
+        PropertyInfo pi = type.GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
+        MethodInfo SetterMethodInfo = pi.GetSetMethod();
+
+        ParameterExpression param = Expression.Parameter(typeof(object), "param");
+        Expression convertedParam = Expression.Convert(param, type);
+
+        ParameterExpression paramNewValue = Expression.Parameter(typeof(object), "newValue");
+        Expression convertedParamNewValue = Expression.Convert(paramNewValue, pi.PropertyType);
+
+        MethodCallExpression MethodCallSetterOfProperty = Expression.Call(convertedParam, SetterMethodInfo, convertedParamNewValue);
+
+        Expression SetPropertyValueExp = Expression.Lambda(MethodCallSetterOfProperty, param, paramNewValue);
+        Expression<Action<object, object>> SetPropertyValueLambda = (Expression<Action<object, object>>)SetPropertyValueExp;
+        return SetPropertyValueLambda.Compile();
     }
     public static string WriteCsv<T>(this IEnumerable<T> list, Encoding encoding, string seperator = ",", bool writeHeadersToCSV = false)
     {
@@ -587,11 +584,38 @@ public class Uni : DynamicObject
             var com = NewCommand(commandType, schema, commandText, con, args);
             var reader = com.ExecuteReader();
             int i = 0;
+            var propertyList = typeof(T).GetProperties().ToList();
+            var setterList = new Dictionary<string, Action<object, object>>();
+            var columnList = new List<string>();
+            dynamic retValue = Activator.CreateInstance<T>();
+            propertyList.ForEach(pi => setterList.Add(pi.Name, UniExtensions.PropertySetter(retValue, pi.Name)));
             do
             {
                 if (i++ == index)
+                    columnList.Clear();
                     while (reader.Read())
-                        yield return reader.RecordToObject<T>();
+                    {
+                        if (Enum.GetNames(typeof(TypeCode)).Contains(typeof(T).Name))
+                            retValue = reader.IsDBNull(0) ? default(T) : reader[0];
+                        else
+                        {
+                            retValue = Activator.CreateInstance<T>();
+                            if(columnList.Count==0)
+                                columnList = reader.GetSchemaTable().AsEnumerable().Select(f => f["ColumnName"].ToString()).ToList();
+                            propertyList.ForEach(pi =>
+                                {
+                                    if (columnList.Contains(pi.Name))
+                                    {
+                                        int columnOrdinal = reader.GetOrdinal(pi.Name);
+                                        setterList[pi.Name](retValue, reader.IsDBNull(columnOrdinal) ? null : reader[columnOrdinal]);
+                                    }
+                                    else
+                                        setterList[pi.Name](retValue, null);
+                                }
+                            );
+                        }
+                        yield return retValue;
+                    }
             } while (reader.NextResult());
         }
     }
