@@ -564,29 +564,28 @@ public class Uni : DynamicObject
             {
                 if (i++ == index)
                     columnList.Clear();
-                    while (reader.Read())
+                while (reader.Read())
+                {
+                    if (Enum.GetNames(typeof(TypeCode)).Contains(typeof(T).Name))
+                        retValue = reader.IsDBNull(0) ? default(T) : reader[0];
+                    else
                     {
-                        if (Enum.GetNames(typeof(TypeCode)).Contains(typeof(T).Name))
-                            retValue = reader.IsDBNull(0) ? default(T) : reader[0];
-                        else
+                        retValue = Activator.CreateInstance<T>();
+                        if (columnList.Count == 0)
+                            columnList = reader.GetSchemaTable().AsEnumerable().Select(f => f["ColumnName"].ToString()).ToList();
+                        propertyList.ForEach(pi =>
                         {
-                            retValue = Activator.CreateInstance<T>();
-                            if(columnList.Count==0)
-                                columnList = reader.GetSchemaTable().AsEnumerable().Select(f => f["ColumnName"].ToString()).ToList();
-                            propertyList.ForEach(pi =>
-                                {
-                                    if (columnList.Contains(pi.Name))
-                                    {
-                                        int columnOrdinal = reader.GetOrdinal(pi.Name);
-                                        setterList[pi.Name](retValue, reader.IsDBNull(columnOrdinal) ? null : reader[columnOrdinal]);
-                                    }
-                                    else
-                                        setterList[pi.Name](retValue, null);
-                                }
-                            );
+                            if (columnList.Contains(pi.Name))
+                            {
+                                int columnOrdinal = reader.GetOrdinal(pi.Name);
+                                if (!reader.IsDBNull(columnOrdinal))
+                                    setterList[pi.Name](retValue, reader[columnOrdinal]);
+                            }
                         }
-                        yield return retValue;
+                        );
                     }
+                    yield return retValue;
+                }
             } while (reader.NextResult());
         }
     }
