@@ -631,6 +631,31 @@ public class Uni : DynamicObject
         else
             return this.dyno.Exists(Schema: schema, Table: commandText, Where: where, CallBack: callBack, Args: args);
     }
+    public virtual void BulkInsert(string schema = "", string table = "", IList<dynamic> args = null)
+    {
+        if (!string.IsNullOrEmpty(table))
+        {
+            var fullTableName = string.IsNullOrEmpty(schema) ? table : string.Format(commandFormat, schema, table);
+            using (var con = NewConnection())
+            {
+                using (var dbTransaction = con.BeginTransaction())
+                {
+                    var sql = "";
+                    while (args.Count() > 0)
+                    {
+                        var item = args.ElementAt(0);
+                        var ll = (object)item;
+                        args.RemoveAt(0);
+                        var dic = item as IDictionary<string, object>;
+                        sql = string.Format("INSERT INTO {0} ({1}) VALUES ({2}){3}", fullTableName, ll.ToColumns(), ll.ToParameterString("@"), "");
+                        using (var com = NewCommand(CommandType.Text, "", sql, con, ll))
+                            com.ExecuteNonQuery();
+                    }
+                    dbTransaction.Commit();
+                }
+            }
+        }
+    }
     public virtual object ExecuteScalar(CommandType commandType = CommandType.Text, string schema = "", string commandText = "", Action<dynamic> callBack = null, params object[] args)
     {
         var retValue = default(object);
