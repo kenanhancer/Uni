@@ -13,7 +13,7 @@ using System.Reflection;
 using System.IO;
 using System.Linq.Expressions;
 
-public enum DatabaseType { SQLServer, SqlServerCE, MySQL, Oracle, SQLite, PostgreSQL }
+public enum DatabaseType { SQLServer, SqlServerCE, MySQL, Oracle, SQLite, PostgreSQL, OleDB }
 public static class UniExtensions
 {
     public static dynamic RecordToExpando(this IDataReader rdr)
@@ -266,6 +266,7 @@ public class Uni : DynamicObject
     string parameterPrefix = "";
     string commandFormat = "{0}.{1}";
     string defaultSchema = "";
+    string password = "";
     public dynamic dyno;
     public Uni(string connectionStringName, DbProviderFactory dbProviderFactory = null)
     {
@@ -274,6 +275,13 @@ public class Uni : DynamicObject
     public Uni(string connectionString, DatabaseType dbType, DbProviderFactory dbProviderFactory = null)
     {
         SetBaseProperties(connectionString: connectionString, dbType: dbType, dbProviderFactory: dbProviderFactory);
+    }
+    public virtual void ChangePassword(string password)
+    {
+        this.password = password;
+        using (dynamic con = NewConnection())
+            if (dbType == DatabaseType.SQLite && !string.IsNullOrEmpty(password))
+                con.ChangePassword(password);
     }
     private void SetBaseProperties(string connectionStringName = "", string connectionString = "", DatabaseType dbType = DatabaseType.SQLServer, DbProviderFactory dbProviderFactory = null)
     {
@@ -295,6 +303,8 @@ public class Uni : DynamicObject
                 this.dbType = DatabaseType.PostgreSQL;
             else if (conStrSettings.ProviderName.ToLower().Contains("SqlServerCe".ToLower()))
                 this.dbType = DatabaseType.SqlServerCE;
+            else if (conStrSettings.ProviderName.ToLower().Equals("OLEDB".ToLower()))
+                this.dbType = DatabaseType.OleDB;
         }
         if (this.dbType == DatabaseType.SQLServer || this.dbType == DatabaseType.SQLite)
         {
@@ -893,12 +903,16 @@ public class Uni : DynamicObject
                 }
             }
             if (limit == 1)
-                if (columnArray.Length == 1 && columnArray[0] != "*")
-                    result = queryResult.ToEnumerable<object>().SingleOrDefault().ToDictionary()[columnArray[0]];
+            {
+                var limit1 = queryResult.ToEnumerable<dynamic>().SingleOrDefault();
+                if (limit1 != null && columnArray.Length == 1 && columnArray[0] != "*")
+                    result = limit1.ToDictionary()[columnArray[0]];
                 else
-                    result = queryResult.ToEnumerable<dynamic>().SingleOrDefault();
+                    result = limit1;
+            }
             else
                 result = queryResult;
+
         }
         else if (binderName == "insert")
         {
