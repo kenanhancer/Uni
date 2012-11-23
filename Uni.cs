@@ -147,6 +147,39 @@ public static class UniExtensions
             yield return ret;
         }
     }
+    public static Nullable<DbType> GetDbType(this string type)
+    {
+        switch (type)
+        {
+            //case "string": return DbType.AnsiString;
+            //case "string": return DbType.AnsiStringFixedLength;
+            //case "decimal": return DbType.Currency;
+            //case "DateTime": return DbType.Date;
+            //case "string": return DbType.StringFixedLength;
+            //case "decimal": return DbType.VarNumeric;
+            case "varchar": return DbType.String;
+            case "byte[]": return DbType.Binary;
+            case "bool": return DbType.Boolean;
+            case "bit": return DbType.Boolean;
+            case "byte": return DbType.Byte;
+            case "DateTime": return DbType.DateTime;
+            case "decimal": return DbType.Decimal;
+            case "double": return DbType.Double;
+            case "Guid": return DbType.Guid;
+            case "short": return DbType.Int16;
+            case "int": return DbType.Int32;
+            case "long": return DbType.Int64;
+            case "object": return DbType.Object;
+            case "sbyte": return DbType.SByte;
+            case "float": return DbType.Single;
+            case "string": return DbType.String;
+            case "TimeSpan": return DbType.Time;
+            case "ushort": return DbType.UInt16;
+            case "uint": return DbType.UInt32;
+            case "ulong": return DbType.UInt64;
+            default: return null;
+        }
+    }
     public static Action<object, object> PropertySetter(object obj, string propertyName)
     {
         var type = obj.GetType();
@@ -371,13 +404,14 @@ public class Uni : DynamicObject
                         dbParameter.Value = typeof(Dictionary<string, object>).IsAssignableFrom(argumentArray[0].GetType()) ? argumentArray[0].ToDictionary().Values.ElementAt(i) : argumentArray[i];
                         parameterList.Add(dbParameter);
                     }
-                    else if (comParameters.ElementAt(i).PARAMETER_MODE == "OUT")
+                    else if (comParameters.ElementAt(i).PARAMETER_MODE == "OUT" || comParameters.ElementAt(i).PARAMETER_MODE == "INOUT")
                     {
                         var parameterName = comParameters.ElementAt(i).PARAMETER_NAME;
                         DbParameter dbParameter = com.CreateParameter();
                         //dbParameter.ParameterName = this.dbType == DatabaseType.Oracle || this.dbType == DatabaseType.MySQL ? string.Format("{0}{1}", parameterPrefix, parameterName) : parameterName;
                         dbParameter.ParameterName = parameterName;
                         dbParameter.Direction = ParameterDirection.Output;
+                        dbParameter.DbType = ((string)comParameters.ElementAt(i).DATA_TYPE).GetDbType().Value;
                         parameterList.Add(dbParameter);
                     }
                 }
