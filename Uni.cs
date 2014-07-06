@@ -180,6 +180,80 @@ public static class UniExtensions
             default: return null;
         }
     }
+    public static Type GetCSharpType(this string type, DatabaseType dbType)
+    {
+        Type retValue = null;
+        switch (dbType)
+        {
+            case DatabaseType.SQLServer:
+            case DatabaseType.MySQL:
+                if (type == "bigint")
+                    retValue = typeof(Int64);
+                else if (type == "binary" || type.ToUpper() == "FILESTREAM" || type == "image" || type == "rowversion" || type == "timestamp" || type == "varbinary" || type.ToUpper() == "BINARY/MEDIUMBLOB/LONGBLOB" || type.ToUpper() == "VARBINARY/MEDIUMBLOB/LONGBLOB")
+                    retValue = typeof(Byte[]);
+                else if (type == "bit" || type.ToUpper() == "TINYINT(1)")
+                    retValue = typeof(bool);
+                else if (type == "char" || type == "nchar" || type == "ntext" || type == "nvarchar" || type == "text" || type == "varchar" || type.ToUpper() == "CHAR/LONGTEXT")
+                    retValue = typeof(string);
+                else if (type == "date" || type == "datetime" || type == "datetime2" || type == "datetimeoffset" || type == "smalldatetime")
+                    retValue = typeof(DateTime);
+                else if (type == "decimal" || type == "money" || type == "numeric" || type == "smallmoney")
+                    retValue = typeof(decimal);
+                else if (type == "float")
+                    retValue = typeof(Double);
+                else if (type == "int")
+                    retValue = typeof(Int32);
+                else if (type == "real")
+                    retValue = typeof(Single);
+                else if (type == "smallint")
+                    retValue = typeof(Int16);
+                else if (type == "sql_variant")
+                    retValue = typeof(object);
+                else if (type == "time")
+                    retValue = typeof(TimeSpan);
+                else if (type == "tinyint")
+                    retValue = typeof(Byte);
+                else if (type == "uniqueidentifier" || type.ToUpper() == "VARCHAR(64)")
+                    retValue = typeof(Guid);
+                else if (type == "xml" || type.ToUpper() == "TEXT")
+                {
+                    //retValue = typeof(Xml);
+                }
+                break;
+            case DatabaseType.SqlServerCE:
+                break;
+            case DatabaseType.Oracle:
+                if (type == "BFILE" || type == "BLOB" || type == "LONG RAW" || type == "RAW")
+                    retValue = typeof(Byte[]);
+                else if (type == "CHAR" || type == "CLOB" || type == "LONG" || type == "NCHAR" || type == "NCLOB" || type == "NVARCHAR2" || type == "ROWID")
+                    retValue = typeof(string);
+                else if (type == "DATE" || type == "TIMESTAMP" || type == "TIMESTAMP WITH LOCAL TIME ZONE" || type == "TIMESTAMP WITH TIME ZONE")
+                    retValue = typeof(DateTime);
+                else if (type == "FLOAT" || type == "INTEGER" || type == "NUMBER")
+                    retValue = typeof(decimal);
+                else if (type == "INTERVAL YEAR TO MONTH")
+                    retValue = typeof(Int32);
+                else if (type == "INTERVAL DAY TO SECOND")
+                    retValue = typeof(TimeSpan);
+                else if (type == "REF CURSOR")
+                {
+
+                }
+                //else if (type == "UNSIGNED INTEGER")
+                    //retValue = typeof(System.Numerics.BigInteger);
+                break;
+            case DatabaseType.SQLite:
+                break;
+            case DatabaseType.PostgreSQL:
+                break;
+            case DatabaseType.OleDB:
+                break;
+            default:
+                break;
+        }
+
+        return retValue;
+    }
     public static Action<object, object> PropertySetter(object obj, string propertyName)
     {
         var type = obj.GetType();
@@ -301,6 +375,7 @@ public class Uni : DynamicObject
     string defaultSchema = "";
     string password = "";
     public dynamic dyno;
+    public DatabaseType DbType { get { return dbType; } }
     public Uni(string connectionStringName, DbProviderFactory dbProviderFactory = null)
     {
         SetBaseProperties(connectionStringName: connectionStringName, dbProviderFactory: dbProviderFactory);
@@ -506,17 +581,17 @@ public class Uni : DynamicObject
             {
                 sql = string.Format("SELECT r2.name COLUMN_NAME FROM [sys].[all_objects] r1, [sys].[all_columns] r2 WHERE r1.object_id=r2.object_id AND schema_name(r1.schema_id) like {0}0 AND r1.name={0}1", parameterPrefix);
                 schema = string.IsNullOrEmpty(schema) ? defaultSchema : schema;
-                retValue = Query(commandText: sql, args: new object[] { schema, commandText });
+                retValue = Query(commandText: sql, args: new object[] { schema, commandText }.ToParameters(parameterPrefix));
             }
             else if (this.dbType == DatabaseType.MySQL)
             {
                 sql = string.Format("SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = {0}0", parameterPrefix);
-                retValue = Query(commandText: sql, args: new object[] { commandText });
+                retValue = Query(commandText: sql, args: new object[] { commandText }.ToParameters(parameterPrefix));
             }
             else if (this.dbType == DatabaseType.Oracle)
             {
-                sql = string.Format("SELECT COLUMN_NAME FROM USER_TAB_COLUMNS WHERE TABLE_NAME = {0}0", parameterPrefix);
-                retValue = Query(commandText: sql, args: new object[] { commandText });
+                sql = string.Format("SELECT * FROM USER_TAB_COLUMNS WHERE TABLE_NAME = {0}0", parameterPrefix);
+                retValue = Query(commandText: sql, args: new object[] { commandText }.ToParameters(parameterPrefix));
 
             }
             else if (this.dbType == DatabaseType.SQLite)
@@ -869,8 +944,8 @@ public class Uni : DynamicObject
                         where = string.IsNullOrEmpty(where) ? string.Format("ROWNUM<={0}", limit) : string.Format("{0} AND ROWNUM<={1}", where, limit);
                     else if (this.dbType == DatabaseType.SQLServer)
                         columns = string.Format("TOP {0} {1}", limit, columns);
-                if (commandArgs.Count > 0 && string.IsNullOrEmpty(where))
-                    where = string.Join(" AND ", commandArgs.Where(f => f.Value != null && !f.Value.GetType().IsArray).Select(f => string.Format("{0}={1}", f.Key, string.Format("{0}{1}", parameterPrefix, f.Key))).ToArray());
+                if (commandArgs.Count > 0)
+                    where = string.Format("{0}{1}", string.IsNullOrEmpty(where) ? "": where + " AND ", string.Join(" AND ", commandArgs.Where(f => f.Value != null && !f.Value.GetType().IsArray).Select(f => string.Format("{0}={1}", f.Key, string.Format("{0}{1}", parameterPrefix, f.Key))).ToArray()));
                 if (binderName == "count" || binderName == "sum" || binderName == "max" || binderName == "min" || binderName == "avg")
                 {
                     var sb = new StringBuilder();
@@ -881,14 +956,15 @@ public class Uni : DynamicObject
                         columns = sb.ToString();
                     }
                     else
-                        columns = string.Format("{0}({1})", binderName.ToUpper(), binderName == "count" && string.IsNullOrEmpty(columns) ? "*" : columns);
+                        columns = string.Format("{0}({1})", binderName.ToUpper(), binderName == "count" && string.IsNullOrEmpty(columns) ? "*" : this.dbType == DatabaseType.Oracle ? "ROWNUM" : columns);
                     if (!string.IsNullOrEmpty(sql))
                         sql = string.Format("SELECT {0} FROM ({1}) t", columns, sql);
                 }
                 if (arguments.ContainsKey("args") && arguments["args"] != null)
                 {
+                    var argsVal = arguments["args"].ToDictionary();
                     var objType = arguments["args"].GetType();
-                    if (string.IsNullOrEmpty(objType.Namespace))
+                    if (string.IsNullOrEmpty(objType.Namespace) || objType.Name == "ExpandoObject")
                     {
                         var dict = arguments["args"].ToDictionary();
                         for (int x = 0; x < dict.Count; x++)
@@ -901,6 +977,8 @@ public class Uni : DynamicObject
                                 argDict.Add(string.Format("{0}{1}", parameterPrefix, dict.ElementAt(x).Key), sb.ToString());
                             }
                     }
+                    if (string.IsNullOrEmpty(where))
+                        where = string.Join(" AND ", argsVal.Where(f => f.Value != null && !f.Value.GetType().IsArray).Select(f => string.Format("{0}={1}", f.Key, string.Format("{0}{1}", parameterPrefix, f.Key))).ToArray());
                 }
                 if (argDict.Count > 0)
                     foreach (var item in argDict)
@@ -926,7 +1004,7 @@ public class Uni : DynamicObject
                         if (this.dbType == DatabaseType.SQLServer)
                             sql = string.Format("SELECT * FROM (SELECT ROW_NUMBER() OVER (ORDER BY {0}) AS RowNumber, * FROM ({1}) as PagedTable) as PagedRecords WHERE RowNumber > {2} AND RowNumber <={3}", rowNumberColumn, sql, pageStart, (pageStart + pageSize));
                         else if (this.dbType == DatabaseType.Oracle)
-                            sql = string.Format("SELECT * FROM (SELECT T1.*,ROWNUM ROWNUMBER FROM ({0}) T1) WHERE ROWNUMBER > {1} and ROWNUMBER <= {2}", sql, pageStart, (pageStart + pageSize));
+                            sql = string.Format("SELECT * FROM (SELECT T1.*,ROWNUM ROWNUMBER FROM ({0}) T1 WHERE ROWNUM <= {2}) WHERE ROWNUMBER > {1}", sql, pageStart, (pageStart + pageSize));
                         else if (this.dbType == DatabaseType.MySQL || this.dbType == DatabaseType.SQLite)
                             sql = string.Format("{0} LIMIT {1},{2}", sql, pageStart, pageSize);
                     }
