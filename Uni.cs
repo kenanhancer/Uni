@@ -12,6 +12,7 @@ using System.Runtime.Serialization;
 using System.Reflection;
 using System.IO;
 using System.Linq.Expressions;
+using System.Collections;
 
 public enum DatabaseType { SQLServer, SqlServerCE, MySQL, Oracle, SQLite, PostgreSQL, OleDB }
 public static class UniExtensions
@@ -94,7 +95,7 @@ public static class UniExtensions
     }
     public static string ToColumns(this object obj, string PKField = "")
     {
-        return string.Format("{0}", string.Join(",", obj.ToDictionary().Keys.Where(f => f != PKField).ToArray()));
+        return string.Format("{0}", string.Join(",", obj.ToDictionary().Keys.Where(f => f != PKField)));
     }
     public static string ToColumnParameterString(this object obj, string parameterPrefix, string PKField = "", string parameterSuffix = "", string seperator = ",")
     {
@@ -107,7 +108,7 @@ public static class UniExtensions
                 columnParameterList.Add(string.Format("{0}={1}{0}{2}", item, parameterPrefix, parameterSuffix));
         else
             columnParameterList.Add(string.Format("{0}={1}0", PKField, parameterPrefix));
-        return string.Format("{0}", string.Join(seperator, columnParameterList.ToArray()));
+        return string.Format("{0}", string.Join(seperator, columnParameterList));
     }
     public static Dictionary<string, object> ToParameters(this object obj, string parameterPrefix, string PKField = "", string parameterSuffix = "")
     {
@@ -149,7 +150,7 @@ public static class UniExtensions
     }
     public static Nullable<DbType> GetDbType(this string type)
     {
-        switch (type)
+        switch (type.ToLower())
         {
             //case "string": return DbType.AnsiString;
             //case "string": return DbType.AnsiStringFixedLength;
@@ -164,6 +165,7 @@ public static class UniExtensions
             case "byte": return DbType.Byte;
             case "DateTime": return DbType.DateTime;
             case "decimal": return DbType.Decimal;
+            case "number": return DbType.Decimal;
             case "double": return DbType.Double;
             case "Guid": return DbType.Guid;
             case "short": return DbType.Int16;
@@ -240,7 +242,7 @@ public static class UniExtensions
 
                 }
                 //else if (type == "UNSIGNED INTEGER")
-                    //retValue = typeof(System.Numerics.BigInteger);
+                //retValue = typeof(System.Numerics.BigInteger);
                 break;
             case DatabaseType.SQLite:
                 break;
@@ -401,17 +403,17 @@ public class Uni : DynamicObject
             conStrSettings = ConfigurationManager.ConnectionStrings[connectionStringName];
             if (conStrSettings.ProviderName.ToLower().Equals("System.Data.SqlClient".ToLower()))
                 this.dbType = DatabaseType.SQLServer;
-            else if (conStrSettings.ProviderName.ToLower().Equals("MySql.Data.MySqlClient".ToLower()))
+            else if (conStrSettings.ProviderName.ToLower().Contains("mysql"))
                 this.dbType = DatabaseType.MySQL;
-            else if (conStrSettings.ProviderName.ToLower().Equals("Oracle.DataAccess.Client".ToLower()))
+            else if (conStrSettings.ProviderName.ToLower().Contains("oracle"))
                 this.dbType = DatabaseType.Oracle;
-            else if (conStrSettings.ProviderName.ToLower().Equals("System.Data.SQLite".ToLower()))
+            else if (conStrSettings.ProviderName.ToLower().Contains("sqlite"))
                 this.dbType = DatabaseType.SQLite;
-            else if (conStrSettings.ProviderName.ToLower().Equals("Npgsql".ToLower()))
+            else if (conStrSettings.ProviderName.ToLower().Contains("npgsql"))
                 this.dbType = DatabaseType.PostgreSQL;
-            else if (conStrSettings.ProviderName.ToLower().Contains("SqlServerCe".ToLower()))
+            else if (conStrSettings.ProviderName.ToLower().Contains("sqlserverce"))
                 this.dbType = DatabaseType.SqlServerCE;
-            else if (conStrSettings.ProviderName.ToLower().Equals("OLEDB".ToLower()))
+            else if (conStrSettings.ProviderName.ToLower().Contains("oledb"))
                 this.dbType = DatabaseType.OleDB;
         }
         if (this.dbType == DatabaseType.SQLServer || this.dbType == DatabaseType.SQLite)
@@ -451,7 +453,7 @@ public class Uni : DynamicObject
         con.Open();
         return con;
     }
-    public virtual DbCommand NewCommand(CommandType commandType, string schema, string commandText, DbConnection con, params object[] args)
+    public virtual DbCommand NewCommand(CommandType commandType, string schema, string package, string commandText, DbConnection con, params object[] args)
     {
         var com = _dbProviderFactory.CreateCommand();
         com.Connection = con;
@@ -464,18 +466,18 @@ public class Uni : DynamicObject
         {
             var argumentArray = args.Length == 1 && args[0] != null && args[0].GetType().IsArray ? (object[])args[0] : args;
             com.CommandType = commandType;
-            com.CommandText = string.IsNullOrEmpty(schema) ? commandText : string.Format(commandFormat, schema, commandText);
+            com.CommandText = string.Format("{0}{1}{2}", string.IsNullOrEmpty(schema) ? "" : schema + ".", string.IsNullOrEmpty(package) ? "" : package + ".", string.IsNullOrEmpty(commandText) ? "" : commandText);
             if (argumentArray.Length > 0)
             {
                 var parameterList = new List<DbParameter>();
-                var comParameters = GetCommandParameters(commandText, schema);
+                var comParameters = GetCommandParameters(commandText: commandText, schema: schema, package: package);
                 for (int i = 0; i < comParameters.Count(); i++)
                 {
                     if (comParameters.ElementAt(i).PARAMETER_MODE == "IN")
                     {
                         var parameterName = comParameters.ElementAt(i).PARAMETER_NAME;
                         DbParameter dbParameter = com.CreateParameter();
-                        dbParameter.ParameterName = this.dbType == DatabaseType.Oracle || this.dbType == DatabaseType.MySQL ? string.Format("{0}{1}", parameterPrefix, parameterName) : parameterName;
+                        dbParameter.ParameterName = parameterName;
                         dbParameter.Value = typeof(Dictionary<string, object>).IsAssignableFrom(argumentArray[0].GetType()) ? argumentArray[0].ToDictionary().Values.ElementAt(i) : argumentArray[i];
                         parameterList.Add(dbParameter);
                     }
@@ -483,7 +485,6 @@ public class Uni : DynamicObject
                     {
                         var parameterName = comParameters.ElementAt(i).PARAMETER_NAME;
                         DbParameter dbParameter = com.CreateParameter();
-                        //dbParameter.ParameterName = this.dbType == DatabaseType.Oracle || this.dbType == DatabaseType.MySQL ? string.Format("{0}{1}", parameterPrefix, parameterName) : parameterName;
                         dbParameter.ParameterName = parameterName;
                         dbParameter.Direction = ParameterDirection.Output;
                         dbParameter.DbType = ((string)comParameters.ElementAt(i).DATA_TYPE).GetDbType().Value;
@@ -532,7 +533,7 @@ public class Uni : DynamicObject
         parameter.Value = value == null ? DBNull.Value : value;
         return parameter;
     }
-    public virtual IEnumerable<dynamic> GetCommandParameters(string commandText, string schema = "")
+    public virtual IEnumerable<dynamic> GetCommandParameters(string commandText, string schema = "", string package = "")
     {
         IEnumerable<dynamic> retValue = null;
         using (var con = NewConnection())
@@ -541,16 +542,19 @@ public class Uni : DynamicObject
             if (this.dbType == DatabaseType.SQLServer || this.dbType == DatabaseType.MySQL)
             {
                 schema = string.IsNullOrEmpty(schema) ? defaultSchema : schema;
-                sql = string.Format("SELECT PARAMETER_MODE,PARAMETER_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH DATA_LENGTH FROM INFORMATION_SCHEMA.PARAMETERS WHERE {0}", string.IsNullOrEmpty(schema) ? string.Format("SPECIFIC_NAME={0}0", parameterPrefix) : string.Format("SPECIFIC_SCHEMA={0}0 AND SPECIFIC_NAME={0}1", parameterPrefix));
+                sql = string.Format("SELECT PARAMETER_MODE,PARAMETER_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH DATA_LENGTH FROM INFORMATION_SCHEMA.PARAMETERS WHERE {0}", string.IsNullOrEmpty(schema) ? string.Format("SPECIFIC_NAME={0}0", parameterPrefix) : string.Format("SPECIFIC_NAME={0}0 AND SPECIFIC_SCHEMA={0}1", parameterPrefix));
             }
             else if (this.dbType == DatabaseType.Oracle)
-                sql = string.Format("SELECT ARGUMENT_NAME PARAMETER_NAME, IN_OUT PARAMETER_MODE, DATA_TYPE, DATA_LENGTH FROM SYS.ALL_ARGUMENTS WHERE {0} ORDER BY POSITION", string.IsNullOrEmpty(schema) ? "OBJECT_NAME=:0" : "OWNER=:0 AND OBJECT_NAME=:1");
+            {
+                var criteria = string.IsNullOrEmpty(schema) ? "PROCEDURE_NAME=:0" : "PROCEDURE_NAME=:0 AND OWNER=:1";
+                sql = string.Format("SELECT A.ARGUMENT_NAME PARAMETER_NAME, A.IN_OUT PARAMETER_MODE, A.DATA_TYPE, A.DATA_LENGTH FROM SYS.ALL_ARGUMENTS A, (SELECT * FROM (SELECT * FROM SYS.ALL_PROCEDURES WHERE {0} ORDER BY SUBPROGRAM_ID DESC) WHERE ROWNUM=1) P WHERE P.OBJECT_ID=A.OBJECT_ID AND P.SUBPROGRAM_ID=A.SUBPROGRAM_ID {1}", criteria, string.IsNullOrEmpty(package) ? "" : "AND A.PACKAGE_NAME=:2");
+            }
             //else if (this.dbType == DatabaseType.SQLite)
             //else if (this.dbType == DatabaseType.PostgreSQL)
             if (string.IsNullOrEmpty(schema))
                 retValue = Query(commandText: sql, args: new object[] { commandText }.ToParameters(parameterPrefix));
             else
-                retValue = Query(commandText: sql, args: new object[] { schema, commandText }.ToParameters(parameterPrefix));
+                retValue = Query(commandText: sql, args: new object[] { commandText, schema, package }.ToParameters(parameterPrefix));
         }
         return retValue;
     }
@@ -564,7 +568,7 @@ public class Uni : DynamicObject
             else if (this.dbType == DatabaseType.MySQL)
                 retValue = Query(commandText: "SELECT * FROM INFORMATION_SCHEMA.TABLES");
             else if (this.dbType == DatabaseType.Oracle)
-                retValue = Query(commandText: "SELECT * FROM all_tables");
+                retValue = Query(commandText: "SELECT * FROM ALL_TABLES");
             else if (this.dbType == DatabaseType.SQLite)
                 retValue = Query(commandText: "SELECT * FROM sqlite_master WHERE type='table'");
             //else if (this.dbType == DatabaseType.PostgreSQL)
@@ -590,7 +594,7 @@ public class Uni : DynamicObject
             }
             else if (this.dbType == DatabaseType.Oracle)
             {
-                sql = string.Format("SELECT * FROM USER_TAB_COLUMNS WHERE TABLE_NAME = {0}0", parameterPrefix);
+                sql = string.Format("SELECT * FROM ALL_TAB_COLUMNS WHERE TABLE_NAME = UPPER({0}0)", parameterPrefix);
                 retValue = Query(commandText: sql, args: new object[] { commandText }.ToParameters(parameterPrefix));
 
             }
@@ -610,53 +614,53 @@ public class Uni : DynamicObject
             ((IDictionary<string, object>)result).Add(column.COLUMN_NAME, null);
         return result;
     }
-    public virtual IEnumerable<dynamic> Query(CommandType commandType = CommandType.Text, string schema = "", string commandText = "", Action<dynamic> callBack = null, params object[] args)
+    public virtual IEnumerable<dynamic> Query(CommandType commandType = CommandType.Text, string schema = "", string package = "", string commandText = "", Action<dynamic> callBack = null, params object[] args)
     {
         var retValue = new List<dynamic>();
+        int i = 0;
         using (var con = NewConnection())
         {
-            var com = NewCommand(commandType, schema, commandText, con, args);
+            var com = NewCommand(commandType, schema, package, commandText, con, args);
             var reader = com.ExecuteReader();
-            if (callBack != null)
-                callBack.Invoke(new { SqlQuery = commandText, OutputParameters = com.ToCallBack().ToList() });
-            int i = 0;
             do
             {
                 //yield return ResultSet(i++, commandType, schema, commandText, args);
-                retValue.Add(ResultSet(i++, commandType, schema, commandText, args));
+                retValue.Add(ResultSet(i++, commandType, schema, package, commandText, args));
             } while (reader.NextResult());
+            if (callBack != null)
+                callBack.Invoke(new { SqlQuery = commandText, OutputParameters = com.ToCallBack().ToList() });
         }
-        if (retValue.Count == 1)
+        if (i == 1)
             return retValue[0];
         else
             return retValue;
     }
-    public virtual IEnumerable<dynamic> Query<T>(CommandType commandType = CommandType.Text, string schema = "", string commandText = "", Action<dynamic> callBack = null, params object[] args)
+    public virtual IEnumerable<dynamic> Query<T>(CommandType commandType = CommandType.Text, string schema = "", string package = "", string commandText = "", Action<dynamic> callBack = null, params object[] args)
     {
         var retValue = new List<dynamic>();
+        int i = 0;
         using (var con = NewConnection())
         {
-            var com = NewCommand(commandType, schema, commandText, con, args);
+            var com = NewCommand(commandType, schema, package, commandText, con, args);
             var reader = com.ExecuteReader();
-            if (callBack != null)
-                callBack.Invoke(new { SqlQuery = commandText, OutputParameters = com.ToCallBack().ToList() });
-            int i = 0;
             do
             {
-                //yield return ResultSet(i++, commandType, schema, commandText, args);
-                retValue.Add(ResultSet<T>(i++, commandType, schema, commandText, args));
+                //yield return ResultSet<T>(i++, commandType, schema, commandText, args);
+                retValue.Add(ResultSet<T>(i++, commandType, schema, package, commandText, args));
             } while (reader.NextResult());
+            if (callBack != null)
+                callBack.Invoke(new { SqlQuery = commandText, OutputParameters = com.ToCallBack().ToList() });
         }
-        if (retValue.Count == 1)
+        if (i == 1)
             return retValue[0];
         else
             return retValue;
     }
-    private IEnumerable<dynamic> ResultSet(int index, CommandType commandType = CommandType.Text, string schema = "", string commandText = "", params object[] args)
+    private IEnumerable<dynamic> ResultSet(int index, CommandType commandType = CommandType.Text, string schema = "", string package = "", string commandText = "", params object[] args)
     {
         using (var con = NewConnection())
         {
-            var com = NewCommand(commandType, schema, commandText, con, args);
+            var com = NewCommand(commandType, schema, package, commandText, con, args);
             var reader = com.ExecuteReader();
             int i = 0;
             do
@@ -667,11 +671,11 @@ public class Uni : DynamicObject
             } while (reader.NextResult());
         }
     }
-    private IEnumerable<T> ResultSet<T>(int index, CommandType commandType = CommandType.Text, string schema = "", string commandText = "", params object[] args)
+    private IEnumerable<T> ResultSet<T>(int index, CommandType commandType = CommandType.Text, string schema = "", string package = "", string commandText = "", params object[] args)
     {
         using (var con = NewConnection())
         {
-            var com = NewCommand(commandType, schema, commandText, con, args);
+            var com = NewCommand(commandType, schema, package, commandText, con, args);
             var reader = com.ExecuteReader();
             int i = 0;
             var propertyList = typeof(T).GetProperties().ToList();
@@ -767,7 +771,7 @@ public class Uni : DynamicObject
                         args.RemoveAt(0);
                         var dic = item as IDictionary<string, object>;
                         sql = string.Format("INSERT INTO {0} ({1}) VALUES ({2}){3}", fullTableName, ll.ToColumns(), ll.ToParameterString("@"), "");
-                        using (var com = NewCommand(CommandType.Text, "", sql, con, ll))
+                        using (var com = NewCommand(CommandType.Text, "", "", sql, con, ll))
                             com.ExecuteNonQuery();
                     }
                     dbTransaction.Commit();
@@ -780,7 +784,7 @@ public class Uni : DynamicObject
         var retValue = default(object);
         using (var con = NewConnection())
         {
-            var com = NewCommand(commandType, schema, commandText, con, args);
+            var com = NewCommand(commandType, schema, "", commandText, con, args);
             retValue = com.ExecuteScalar();
             if (callBack != null)
                 callBack.Invoke(new { SqlQuery = com.CommandText, OutputParameters = com.ToCallBack().ToList() });
@@ -823,7 +827,7 @@ public class Uni : DynamicObject
         var retValue = 0;
         using (var con = NewConnection())
         {
-            var com = NewCommand(commandType, schema, commandText, con, args);
+            var com = NewCommand(commandType, schema, "", commandText, con, args);
             retValue = ExecuteNonQuery(com);
         }
         return retValue;
@@ -850,11 +854,11 @@ public class Uni : DynamicObject
     {
         return ExecuteNonQuery(new DbCommand[] { command });
     }
-    private dynamic CallQueryReflection(Type type, CommandType commandType = CommandType.Text, string schema = "", string commandText = "", Action<dynamic> callBack = null, params object[] args)
+    private dynamic CallQueryReflection(Type type, CommandType commandType = CommandType.Text, string schema = "", string package = "", string commandText = "", Action<dynamic> callBack = null, params object[] args)
     {
         var mi = typeof(Uni).GetMethods().Where(f => f.Name == "Query" && f.IsGenericMethod).SingleOrDefault();
         mi = mi.MakeGenericMethod(type);
-        dynamic queryResult = mi.Invoke(this, new object[] { commandType, schema, commandText, callBack, args });
+        dynamic queryResult = mi.Invoke(this, new object[] { commandType, schema, package, commandText, callBack, args });
         return queryResult;
     }
     public override bool TryInvokeMember(InvokeMemberBinder binder, object[] args, out object result)
@@ -868,11 +872,20 @@ public class Uni : DynamicObject
         var commandArgs = new Dictionary<string, object>();
         var argDict = new Dictionary<string, string>();
         var callBack = (Action<dynamic>)null;
-        string schema = "", table = "", fn = "", sp = "", where = "", orderby = "", groupby = "", having = "", columns = "*", sql = "", fullTableName = "", fullFnName = "", fullSpName = "", PKField = "", rowNumberColumn = "";
+        string schema = "", table = "", fn = "", sp = "", where = "", orderby = "", groupby = "", having = "", columns = "*", sql = "", fullTableName = "", fullFnName = "", fullSpName = "", PKField = "", rowNumberColumn = "", package = "";
         int limit = 0, pageSize = 0, pageNo = 0;
+        var argumentNames = binder.CallInfo.ArgumentNames.ToArray();
+        if (binderName == "execute")
+        {
+            var argumentArray = new Dictionary<string, object>();
+            binderName = args[0].ToExpando().Operation.ToLower();
+            args[0].ToDictionary().Where(f => f.Key != "Operation").ToList().ForEach(f => argumentArray.Add(f.Key, f.Value));
+            argumentNames = argumentArray.Keys.ToArray();
+            args = argumentArray.Values.ToArray();
+        }
         for (int i = 0; i < args.Length; i++)
         {
-            var argumentName = binder.CallInfo.ArgumentNames[i].ToLower();
+            var argumentName = argumentNames[i].ToLower();
             dynamic argumentValue = args[i];
             arguments.Add(argumentName, argumentValue);
             if (argumentName == "schema")
@@ -907,19 +920,24 @@ public class Uni : DynamicObject
                 PKField = argumentValue;
             else if (argumentName == "rownumbercolumn")
                 rowNumberColumn = argumentValue;
+            else if (argumentName == "package")
+                package = argumentValue;
             else if (argumentName != "args")
             {
-                commandArgs.Add(binder.CallInfo.ArgumentNames[i], argumentValue);
+                commandArgs.Add(argumentNames[i], argumentValue);
                 if (argumentValue != null && argumentValue.GetType().IsArray)
                 {
                     var sb = new StringBuilder();
                     dynamic argValueArray = argumentValue;
                     for (int y = 0; y < argValueArray.Length; y++)
-                        sb.AppendFormat("{0}{1}{2}", parameterPrefix, binder.CallInfo.ArgumentNames[i] + y.ToString(), y < argValueArray.Length - 1 ? "," : "");
-                    argDict.Add(string.Format("{0}{1}", parameterPrefix, binder.CallInfo.ArgumentNames[i]), sb.ToString());
+                        sb.AppendFormat("{0}{1}{2}", parameterPrefix, argumentNames[i] + y.ToString(), y < argValueArray.Length - 1 ? "," : "");
+                    argDict.Add(string.Format("{0}{1}", parameterPrefix, argumentNames[i]), sb.ToString());
                 }
             }
         }
+        Type argsType = null;
+        if (arguments.ContainsKey("args"))
+            argsType = arguments["args"].GetType();
         var columnArray = columns.Split(',');
         if (string.IsNullOrEmpty(sql))
             if (!string.IsNullOrEmpty(table))
@@ -932,11 +950,11 @@ public class Uni : DynamicObject
         object queryResult = null;
         if (binderName == "query" || binderName == "exists" || binderName == "count" || binderName == "sum" || binderName == "max" || binderName == "min" || binderName == "avg")
         {
-            if (!string.IsNullOrEmpty(sp))
+            if (!string.IsNullOrEmpty(sp))//Execute Stored Procedure
                 if (typeArgs.Count > 0)
-                    queryResult = CallQueryReflection(typeArgs[0], CommandType.StoredProcedure, schema, sp, (Action<dynamic>)(f => outputs = f), commandArgs.Count > 0 ? commandArgs.ToParameters(parameterPrefix) : arguments.ContainsKey("args") ? arguments["args"].ToParameters(parameterPrefix) : null);
+                    queryResult = CallQueryReflection(typeArgs[0], CommandType.StoredProcedure, schema, package, sp, (Action<dynamic>)(f => outputs = f), commandArgs.Count > 0 ? commandArgs.ToParameters(parameterPrefix) : arguments.ContainsKey("args") ? arguments["args"].ToParameters(parameterPrefix) : null);
                 else
-                    queryResult = Query(commandType: CommandType.StoredProcedure, schema: schema, commandText: sp, callBack: (Action<dynamic>)(f => outputs = f), args: commandArgs.Count > 0 ? commandArgs.ToParameters(parameterPrefix) : arguments.ContainsKey("args") ? arguments["args"].ToParameters(parameterPrefix) : null);
+                    queryResult = Query(commandType: CommandType.StoredProcedure, schema: schema, package: package, commandText: sp, callBack: (Action<dynamic>)(f => outputs = f), args: commandArgs.Count > 0 ? commandArgs.ToParameters(parameterPrefix) : arguments.ContainsKey("args") ? arguments["args"].ToParameters(parameterPrefix) : null);
             else
             {
                 if (limit > 0)
@@ -945,7 +963,10 @@ public class Uni : DynamicObject
                     else if (this.dbType == DatabaseType.SQLServer)
                         columns = string.Format("TOP {0} {1}", limit, columns);
                 if (commandArgs.Count > 0)
-                    where = string.Format("{0}{1}", string.IsNullOrEmpty(where) ? "": where + " AND ", string.Join(" AND ", commandArgs.Where(f => f.Value != null && !f.Value.GetType().IsArray).Select(f => string.Format("{0}={1}", f.Key, string.Format("{0}{1}", parameterPrefix, f.Key))).ToArray()));
+                {
+                    var commandArgsArray = commandArgs.Where(f => f.Value != null && !f.Value.GetType().IsArray).Select(f => string.Format("{0}={1}", f.Key, string.Format("{0}{1}", parameterPrefix, f.Key))).Concat((new[] { where }).Where(f => !string.IsNullOrEmpty(f)));
+                    where = string.Join(" AND ", commandArgsArray);
+                }
                 if (binderName == "count" || binderName == "sum" || binderName == "max" || binderName == "min" || binderName == "avg")
                 {
                     var sb = new StringBuilder();
@@ -962,9 +983,7 @@ public class Uni : DynamicObject
                 }
                 if (arguments.ContainsKey("args") && arguments["args"] != null)
                 {
-                    var argsVal = arguments["args"].ToDictionary();
-                    var objType = arguments["args"].GetType();
-                    if (string.IsNullOrEmpty(objType.Namespace) || objType.Name == "ExpandoObject")
+                    if (string.IsNullOrEmpty(argsType.Namespace) || argsType.Name == "ExpandoObject")
                     {
                         var dict = arguments["args"].ToDictionary();
                         for (int x = 0; x < dict.Count; x++)
@@ -977,8 +996,8 @@ public class Uni : DynamicObject
                                 argDict.Add(string.Format("{0}{1}", parameterPrefix, dict.ElementAt(x).Key), sb.ToString());
                             }
                     }
-                    if (string.IsNullOrEmpty(where))
-                        where = string.Join(" AND ", argsVal.Where(f => f.Value != null && !f.Value.GetType().IsArray).Select(f => string.Format("{0}={1}", f.Key, string.Format("{0}{1}", parameterPrefix, f.Key))).ToArray());
+                    else if (string.IsNullOrEmpty(where) && argsType.IsArray)
+                        where = string.Join(" AND ", arguments["args"].ToDictionary().Where(f => f.Value != null && !f.Value.GetType().IsArray).Select(f => string.Format("{0}={1}", f.Key, string.Format("{0}{1}", parameterPrefix, f.Key))));
                 }
                 if (argDict.Count > 0)
                     foreach (var item in argDict)
@@ -1009,7 +1028,7 @@ public class Uni : DynamicObject
                             sql = string.Format("{0} LIMIT {1},{2}", sql, pageStart, pageSize);
                     }
                     if (typeArgs.Count > 0)
-                        queryResult = CallQueryReflection(typeArgs[0], CommandType.Text, "", sql, (Action<dynamic>)(f => outputs = f), commandArgs.Count > 0 ? commandArgs.ToParameters(parameterPrefix) : arguments.ContainsKey("args") ? arguments["args"].ToParameters(parameterPrefix) : null);
+                        queryResult = CallQueryReflection(typeArgs[0], CommandType.Text, "", "", sql, (Action<dynamic>)(f => outputs = f), commandArgs.Count > 0 ? commandArgs.ToParameters(parameterPrefix) : arguments.ContainsKey("args") ? arguments["args"].ToParameters(parameterPrefix) : null);
                     else
                         queryResult = Query(commandType: CommandType.Text, commandText: sql, callBack: (Action<dynamic>)(f => outputs = f), args: commandArgs.Count > 0 ? commandArgs.ToParameters(parameterPrefix) : arguments.ContainsKey("args") ? arguments["args"].ToParameters(parameterPrefix) : null);
                 }
@@ -1024,7 +1043,6 @@ public class Uni : DynamicObject
             }
             else
                 result = queryResult;
-
         }
         else if (binderName == "insert")
         {
@@ -1035,13 +1053,13 @@ public class Uni : DynamicObject
                 newIDSql = ";SELECT LAST_INSERT_ID()";
             else if (this.dbType == DatabaseType.SQLite)
                 newIDSql = ";SELECT LAST_INSERT_ROWID();";
-            if (arguments.ContainsKey("args") && arguments["args"].GetType().IsArray)
+            if (arguments.ContainsKey("args") && argsType.IsArray)
             {
                 var commandList = new List<DbCommand>();
                 foreach (var item in ((object[])arguments["args"]))
                 {
                     sql = string.Format("INSERT INTO {0} ({1}) VALUES ({2}){3}", fullTableName, item.ToColumns(PKField), item.ToParameterString(parameterPrefix, PKField), newIDSql);
-                    commandList.Add(NewCommand(CommandType.Text, "", sql, null, item.ToParameters(parameterPrefix)));
+                    commandList.Add(NewCommand(CommandType.Text, "", "", sql, null, item.ToParameters(parameterPrefix)));
                 }
                 result = ExecuteScalar(commandList.ToArray());
             }
@@ -1054,7 +1072,7 @@ public class Uni : DynamicObject
         }
         else if (binderName == "bulkinsert")
         {
-            if (arguments.ContainsKey("args") && arguments["args"].GetType().IsArray)
+            if (arguments.ContainsKey("args") && argsType.IsArray)
             {
                 var commandList = new List<DbCommand>();
                 var parameterList = new Dictionary<string, object>();
@@ -1067,19 +1085,19 @@ public class Uni : DynamicObject
                     var getParameters = item.ToParameters(parameterPrefix: parameterPrefix, parameterSuffix: i.ToString());
                     getParameters.ToList().ForEach(f => parameterList.Add(f.Key, f.Value));
                 }
-                result = ExecuteNonQuery(commandType: CommandType.Text, commandText: string.Join(";", sqlList.ToArray()), args: parameterList);
+                result = ExecuteNonQuery(commandType: CommandType.Text, commandText: string.Join(";", sqlList), args: parameterList);
             }
         }
         else if (binderName == "update")
         {
-            if (arguments.ContainsKey("args") && arguments["args"].GetType().IsArray)
+            if (arguments.ContainsKey("args") && argsType.IsArray)
             {
                 var commandList = new List<DbCommand>();
                 foreach (var item in ((object[])arguments["args"]))
                 {
                     sql = string.Format("UPDATE {0} SET {1} {2}", fullTableName, item.ToColumnParameterString(parameterPrefix, PKField), string.Format("WHERE {0}={1}{0}", PKField, parameterPrefix));
                     var parameterList = item.ToParameters(parameterPrefix);
-                    commandList.Add(NewCommand(CommandType.Text, "", sql, null, parameterList));
+                    commandList.Add(NewCommand(CommandType.Text, "", "", sql, null, parameterList));
                 }
                 result = ExecuteNonQuery(commandList.ToArray());
             }
@@ -1094,7 +1112,7 @@ public class Uni : DynamicObject
         }
         else if (binderName == "bulkupdate")
         {
-            if (arguments.ContainsKey("args") && arguments["args"].GetType().IsArray)
+            if (arguments.ContainsKey("args") && argsType.IsArray)
             {
                 var commandList = new List<DbCommand>();
                 var parameterList = new Dictionary<string, object>();
@@ -1107,17 +1125,17 @@ public class Uni : DynamicObject
                     var getParameters = item.ToParameters(parameterPrefix: parameterPrefix, parameterSuffix: i.ToString());
                     getParameters.ToList().ForEach(f => parameterList.Add(f.Key, f.Value));
                 }
-                result = ExecuteNonQuery(commandType: CommandType.Text, commandText: string.Join(";", sqlList.ToArray()), args: parameterList);
+                result = ExecuteNonQuery(commandType: CommandType.Text, commandText: string.Join(";", sqlList), args: parameterList);
             }
         }
         else if (binderName == "delete")
         {
-            if (arguments.ContainsKey("args") && arguments["args"].GetType().IsArray)
+            if (arguments.ContainsKey("args") && argsType.IsArray)
             {
                 where = ((object[])arguments["args"]).ToColumnParameterString(parameterPrefix: parameterPrefix, PKField: PKField, seperator: " OR ");
                 sql = string.Format("DELETE FROM {0} WHERE {1}", fullTableName, where);
                 var parameterList = ((object[])arguments["args"]).ToParameters(parameterPrefix: parameterPrefix, PKField: PKField);
-                result = ExecuteNonQuery(NewCommand(CommandType.Text, "", sql, null, parameterList));
+                result = ExecuteNonQuery(NewCommand(CommandType.Text, "", "", sql, null, parameterList));
             }
             else
             {
