@@ -2,7 +2,7 @@ Uni - data access tool for .NET
 ===============================
 
 A simple data access tool for .Net
-You can read main article from http://www.kenanhancer.com/uni-a-simple-data-access-tool-for-dot-net/
+You can read main article from http://kenanhancer.com/uni/
 and you can also read article for MySql database from http://www.kenanhancer.com/uni-mysql-a-simple-data-access-tool-for-dot-net/
 
 How To Install It?
