@@ -1,16 +1,9 @@
-Uni - data access tool for .NET
-===============================
-
-A simple data access tool for .Net
-You can read main article from http://kenanhancer.com/uni/
-and you can also read article for MySql database from http://www.kenanhancer.com/uni-mysql-a-simple-data-access-tool-for-dot-net/
-
 How To Install It?
 ------------------
 Drop Uni C#.NET code file into your project and change it as you wish or you can install from NuGet Galery;
 
 You should write Package Manager Console below code and Uni will be installed automatically.
-```csharp
+```
 Install-Package Uni
 ```
 By the way, you can also reach Uni NuGet package from http://nuget.org/packages/Uni address.
@@ -21,7 +14,7 @@ Let's say that you installed database connectors in your machine.
 Your project doesn't need any DLL in references. Uni will find DLL which is necessary from the GAC.
 
 Let's have a look at config file for connectionStrings which will be used by Uni.
-```csharp
+```xml
 <?xml version="1.0" encoding="utf-8" ?>
 <configuration>
   <connectionStrings>
